@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>VHS CONVERTER · retro video/image processor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            min-height: 100vh;
+            background: radial-gradient(circle at 20% 30%, #0a0c12, #030507);
+            font-family: 'Courier New', 'Fira Code', 'VT323', monospace;
+            padding: 2rem 1.5rem;
+            color: #b3ffec;
+            position: relative;
+        }
+
+        /* CRT flicker overlay */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0, 255, 100, 0.02) 0px, rgba(0, 255, 100, 0.02) 2px, transparent 2px, transparent 6px);
+            z-index: 999;
+            opacity: 0.4;
+            animation: scanlines 8s linear infinite;
+        }
+
+        @keyframes scanlines {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(4px); }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            backdrop-filter: blur(2px);
+        }
+
+        /* retro header */
+        .crt-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #2affb6;
+            display: inline-block;
+            width: auto;
+            padding: 0 1rem 0.8rem 1rem;
+            letter-spacing: 4px;
+            text-shadow: 0 0 5px #2affb6, 0 0 2px #00cc88;
+            font-weight: bold;
+            font-size: 1.8rem;
+            word-break: keep-all;
+        }
+
+        .glow-text {
+            color: #e0ffb0;
+            text-transform: uppercase;
+            background: #0e1a1a80;
+            display: inline-block;
+            padding: 0 12px;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+            border-left: 3px solid #ff3d7f;
+        }
+
+        /* upload zone */
+        .upload-zone {
+            background: #071010cc;
+            border: 2px dashed #2affb6;
+            border-radius: 24px;
+            padding: 2rem 1rem;
+            text-align: center;
+            margin-bottom: 2rem;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 0 12px rgba(42, 255, 182, 0.2);
+        }
+
+        .upload-zone:hover {
+            border-color: #ff61a6;
+            background: #0a1414cc;
+            box-shadow: 0 0 20px #ff3d7f40;
+        }
+
+        .file-label {
+            background: #1e2a2a;
+            padding: 10px 24px;
+            border-radius: 60px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            border: 1px solid #2affb6;
+            transition: 0.15s linear;
+            font-family: monospace;
+        }
+
+        .file-label:hover {
+            background: #2affb622;
+            color: #ffffff;
+            border-color: #ff61a6;
+            text-shadow: 0 0 4px cyan;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .info-badge {
+            margin-top: 16px;
+            font-size: 0.75rem;
+            color: #b0ffe0;
+            background: #00000066;
+            display: inline-block;
+            padding: 5px 14px;
+            border-radius: 40px;
+        }
+
+        /* main media grid */
+        .media-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            justify-content: center;
+            margin: 2rem 0;
+        }
+
+        .card {
+            flex: 1;
+            min-width: 280px;
+            background: #030b0bc9;
+            border-radius: 28px;
+            backdrop-filter: blur(8px);
+            border: 1px solid #2affb655;
+            padding: 1rem;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+            transition: transform 0.2s;
+        }
+
+        .card h3 {
+            font-size: 1.4rem;
+            border-left: 5px solid #ff3d7f;
+            padding-left: 14px;
+            margin-bottom: 1rem;
+            letter-spacing: 1px;
+            font-weight: normal;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .preview-box {
+            background: #00000055;
+            border-radius: 20px;
+            min-height: 280px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid #1f5f55;
+        }
+
+        #originalMedia {
+            max-width: 100%;
+            max-height: 460px;
+            object-fit: contain;
+            border-radius: 16px;
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 0 0 1px #2affb644;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 460px;
+            width: auto;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+            border-radius: 16px;
+            box-shadow: 0 0 0 1px #ff3d7f66, 0 0 0 3px #00000033;
+        }
+
+        /* control panel */
+        .control-panel {
+            background: #021010d9;
+            border-radius: 36px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            border: 1px solid #2affb6;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .param-group {
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .param-group label {
+            display: block;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #ff98c1;
+            margin-bottom: 5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            background: #1f2a2a;
+            height: 3px;
+            border-radius: 10px;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]:focus {
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #2affb6;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 6px #2affb6;
+        }
+
+        .value-display {
+            font-size: 0.7rem;
+            font-family: monospace;
+            color: #b5ffe0;
+            background: #00000077;
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-top: 6px;
+        }
+
+        button {
+            background: #1e2626;
+            border: 1px solid #2affb6;
+            padding: 8px 20px;
+            font-family: monospace;
+            font-weight: bold;
+            color: #dbfff0;
+            border-radius: 60px;
+            cursor: pointer;
+            transition: 0.1s linear;
+            font-size: 0.8rem;
+        }
+
+        button:hover {
+            background: #ff3d7f;
+            border-color: #ffffff;
+            color: black;
+            box-shadow: 0 0 12px #ff3d7f;
+        }
+
+        .vid-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+            justify-content: center;
+        }
+
+        .status {
+            font-size: 0.7rem;
+            background: #000000aa;
+            padding: 5px 12px;
+            border-radius: 30px;
+            display: inline-block;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.65rem;
+            opacity: 0.6;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 800px) {
+            body { padding: 1rem; }
+            .media-grid { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
+        <div class="crt-header">
+            ⍟ VHS STUDIO 〄
+        </div>
+        <div class="glow-text">◢ ANALOG DAMAGE ◣</div>
+    </div>
+
+    <!-- upload area -->
+    <div class="upload-zone" id="dropZone">
+        <label class="file-label" for="mediaUpload">
+            📼 LOAD IMAGE / VIDEO
+            <span style="font-size:1.3rem;">⏼</span>
+        </label>
+        <input type="file" id="mediaUpload" accept="image/*,video/*">
+        <div class="info-badge">
+            🎞️ PNG · JPG · GIF · MP4 · MOV · WEBM — VHS realtime effect
+        </div>
+    </div>
+
+    <!-- preview grid -->
+    <div class="media-grid">
+        <div class="card">
+            <h3>📺 SOURCE</h3>
+            <div class="preview-box">
+                <div id="originalMediaContainer" style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                    <div style="color:#3c7569; text-align:center; padding:2rem;">⚡ no media<br>upload file</div>
+                </div>
+            </div>
+            <div id="mediaControls" style="margin-top: 12px; text-align: center;"></div>
+        </div>
+
+        <div class="card">
+            <h3>📼 VHS EFFECT █ LIVE</h3>
+            <div class="preview-box">
+                <canvas id="vhsCanvas" width="640" height="360" style="width:100%; height:auto; background:black;"></canvas>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-top: 12px;">
+                <button id="downloadSnapshotBtn" style="flex:1; margin-right: 6px;">📸 SNAP VHS</button>
+                <span class="status" id="effectStatus">⚡ ACTIVE</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- VHS parameters -->
+    <div class="control-panel">
+        <div class="param-group">
+            <label>🌀 CHROMA SHIFT</label>
+            <input type="range" id="chromaShift" min="0" max="12" step="0.3" value="4.5">
+            <div class="value-display" id="chromaVal">4.5 px</div>
+        </div>
+        <div class="param-group">
+            <label>📺 NOISE / GRAIN</label>
+            <input type="range" id="noiseAmt" min="0" max="45" step="1" value="18">
+            <div class="value-display" id="noiseVal">18%</div>
+        </div>
+        <div class="param-group">
+            <label>📼 SCANLINES INT.</label>
+            <input type="range" id="scanIntensity" min="0" max="80" step="1" value="38">
+            <div class="value-display" id="scanVal">38%</div>
+        </div>
+        <div class="param-group">
+            <label>⚡ GLITCH / WARP</label>
+            <input type="range" id="glitchFreq" min="0" max="100" step="1" value="34">
+            <div class="value-display" id="glitchVal">34%</div>
+        </div>
+    </div>
+
+    <footer>
+        █ VHS CONVERTER · analog emulation (RGB split, tracking noise, wobble, scanlines) █
+    </footer>
+</div>
+
+<script>
+    (function(){
+        // DOM elements
+        const fileInput = document.getElementById('mediaUpload');
+        const dropZone = document.getElementById('dropZone');
+        const originalContainer = document.getElementById('originalMediaContainer');
+        const vhsCanvas = document.getElementById('vhsCanvas');
+        const ctx = vhsCanvas.getContext('2d');
+        const downloadBtn = document.getElementById('downloadSnapshotBtn');
+        const mediaControlsDiv = document.getElementById('mediaControls');
+
+        // Parameter inputs
+        const chromaSlider = document.getElementById('chromaShift');
+        const chromaVal = document.getElementById('chromaVal');
+        const noiseSlider = document.getElementById('noiseAmt');
+        const noiseVal = document.getElementById('noiseVal');
+        const scanSlider = document.getElementById('scanIntensity');
+        const scanVal = document.getElementById('scanVal');
+        const glitchSlider = document.getElementById('glitchFreq');
+        const glitchVal = document.getElementById('glitchVal');
+
+        // Global state
+        let currentMedia = null;        // HTMLImageElement or HTMLVideoElement
+        let mediaType = null;            // 'image' or 'video'
+        let animationFrameId = null;
+        let currentObjectUrl = null;
+        let sourceDimensions = { width: 0, height: 0 };
+        let targetCanvasWidth = 640, targetCanvasHeight = 360;
+        
+        // effect parameters dynamic
+        let params = {
+            chromaShift: 4.5,
+            noise: 0.18,
+            scanlines: 0.38,
+            glitch: 0.34
+        };
+
+        // update displays
+        function updateParamDisplays() {
+            chromaVal.innerText = params.chromaShift.toFixed(1) + ' px';
+            noiseVal.innerText = Math.round(params.noise * 100) + '%';
+            scanVal.innerText = Math.round(params.scanlines * 100) + '%';
+            glitchVal.innerText = Math.round(params.glitch * 100) + '%';
+        }
+
+        chromaSlider.addEventListener('input', (e) => { params.chromaShift = parseFloat(e.target.value); updateParamDisplays(); });
+        noiseSlider.addEventListener('input', (e) => { params.noise = parseFloat(e.target.value) / 100; updateParamDisplays(); });
+        scanSlider.addEventListener('input', (e) => { params.scanlines = parseFloat(e.target.value) / 100; updateParamDisplays(); });
+        glitchSlider.addEventListener('input', (e) => { params.glitch = parseFloat(e.target.value) / 100; updateParamDisplays(); });
+
+        // cleanup previous
+        function revokeMedia() {
+            if (currentObjectUrl) {
+                URL.revokeObjectURL(currentObjectUrl);
+                currentObjectUrl = null;
+            }
+            if (currentMedia) {
+                if (mediaType === 'video' && currentMedia) {
+                    currentMedia.pause();
+                    currentMedia.removeAttribute('src');
+                    currentMedia.load();
+                }
+                currentMedia = null;
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+
+        // resize canvas to match source aspect ratio (max 640 width)
+        function setCanvasSizeFromSource(srcWidth, srcHeight) {
+            if (!srcWidth || !srcHeight) return;
+            let maxW = 640;
+            let ratio = srcHeight / srcWidth;
+            let drawW = Math.min(srcWidth, maxW);
+            let drawH = drawW * ratio;
+            targetCanvasWidth = Math.floor(drawW);
+            targetCanvasHeight = Math.floor(drawH);
+            vhsCanvas.width = targetCanvasWidth;
+            vhsCanvas.height = targetCanvasHeight;
+            vhsCanvas.style.width = '100%';
+            vhsCanvas.style.height = 'auto';
+        }
+
+        // VHS effect: core pixel processor (chroma shift, glitch strips, noise, scanlines, tracking)
+        function applyVHSEffect(imageData, timestamp) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const srcData = imageData.data;
+            const outputData = new Uint8ClampedArray(srcData.length);
+            
+            // copy original (base)
+            for (let i = 0; i < srcData.length; i++) outputData[i] = srcData[i];
+            
+            // 1. Chromatic aberration (RGB shift)
+            const shiftPx = Math.min(12, Math.max(0, params.chromaShift));
+            if (shiftPx > 0.2) {
+                const shiftInt = Math.floor(shiftPx);
+                const tempOut = new Uint8ClampedArray(srcData.length);
+                for (let i = 0; i < tempOut.length; i++) tempOut[i] = outputData[i];
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const idx = (y * width + x) * 4;
+                        // red shifted left/up, blue shifted right/down
+                        let rx = x - shiftInt;
+                        let ry = y - shiftInt;
+                        let bx = x + shiftInt;
+                        let by = y + shiftInt;
+                        rx = Math.min(width-1, Math.max(0, rx));
+                        ry = Math.min(height-1, Math.max(0, ry));
+                        bx = Math.min(width-1, Math.max(0, bx));
+                        by = Math.min(height-1, Math.max(0, by));
+                        const rIdx = (ry * width + rx) * 4;
+                        const bIdx = (by * width + bx) * 4;
+                        const gIdx = idx;
+                        outputData[idx] = tempOut[rIdx];     // R
+                        outputData[idx+1] = tempOut[gIdx+1]; // G
+                        outputData[idx+2] = tempOut[bIdx+2]; // B
+                    }
+                }
+            }
+            
+            // 2. glitch strips + tracking noise (horizontal bands with pixel shifting)
+            const glitchAmount = params.glitch;
+            const timeSeed = (timestamp * 0.008) % 1000;
+            if (glitchAmount > 0.05) {
+                const glitchIntensity = glitchAmount * 1.8;
+                const numGlitches = Math.floor(glitchIntensity * 2.5) + 1;
+                for (let g = 0; g < numGlitches; g++) {
+                    if (Math.random() * 1.2 < glitchAmount * 0.7) {
+                        const bandY = Math.floor(Math.random() * height);
+                        const bandHeight = Math.max(3, Math.floor(6 + Math.random() * 12));
+                        const offsetX = (Math.sin(timeSeed + bandY) * 6 * glitchAmount + (Math.random() - 0.5) * 8) | 0;
+                        for (let y = bandY; y < Math.min(height, bandY + bandHeight); y++) {
+                            for (let x = 0; x < width; x++) {
+                                const srcX = x + offsetX;
+                                if (srcX >= 0 && srcX < width) {
+                                    const idxOrig = (y * width + srcX) * 4;
+                                    const idxDest = (y * width + x) * 4;
+                                    outputData[idxDest] = srcData[idxOrig];
+                                    outputData[idxDest+1] = srcData[idxOrig+1];
+                                    outputData[idxDest+2] = srcData[idxOrig+2];
+                                } else {
+                                    // add digital streaks
+                                    const idxDest = (y * width + x) * 4;
+                                    outputData[idxDest] = 255;
+                                    outputData[idxDest+1] = 100 + (Math.sin(x) * 50);
+                                    outputData[idxDest+2] = 180;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 2b. analog wobble (sinusoidal horizontal displacement)
+            if (glitchAmount > 0.1) {
+                const wobbleStrength = 2.2 * glitchAmount;
+                const wobbleBuffer = new Uint8ClampedArray(outputData.length);
+                wobbleBuffer.set(outputData);
+                for (let y = 0; y < height; y++) {
+                    const offset = Math.sin(y * 0.12 + timestamp * 0.018) * wobbleStrength;
+                    const intOffset = Math.floor(offset);
+                    if (intOffset !== 0) {
+                        for (let x = 0; x < width; x++) {
+                            const srcX = x - intOffset;
+                            if (srcX >= 0 && srcX < width) {
+                                const srcIdx = (y * width + srcX) * 4;
+                                const dstIdx = (y * width + x) * 4;
+                                outputData[dstIdx] = wobbleBuffer[srcIdx];
+                                outputData[dstIdx+1] = wobbleBuffer[srcIdx+1];
+                                outputData[dstIdx+2] = wobbleBuffer[srcIdx+2];
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 3. Noise & grain
+            const noiseAmount = params.noise;
+            if (noiseAmount > 0) {
+                for (let i = 0; i < outputData.length; i += 4) {
+                    const noiseValR = (Math.random() - 0.5) * noiseAmount * 70;
+                    const noiseValG = (Math.random() - 0.5) * noiseAmount * 70;
+                    const noiseValB = (Math.random() - 0.5) * noiseAmount * 70;
+                    outputData[i] = Math.min(255, Math.max(0, outputData[i] + noiseValR));
+                    outputData[i+1] = Math.min(255, Math.max(0, outputData[i+1] + noiseValG));
+                    outputData[i+2] = Math.min(255, Math.max(0, outputData[i+2] + noiseValB));
+                }
+            }
+            
+            // 4. Scanlines + VHS tracking bands (alternate dark rows & white flash lines)
+            const scanIntensity = params.scanlines;
+            if (scanIntensity > 0) {
+                for (let y = 0; y < height; y++) {
+                    const isEven = (y % 2 === 0);
+                    const darkFactor = isEven ? (1 - scanIntensity * 0.55) : (1 - scanIntensity * 0.25);
+                    for (let x = 0; x < width; x++) {
+                        const idx = (y * width + x) * 4;
+                        outputData[idx] *= darkFactor;
+                        outputData[idx+1] *= darkFactor;
+                        outputData[idx+2] *= darkFactor;
+                    }
+                }
+                // extra tracking lines (random white/grey flicker)
+                if (Math.random() < 0.1 + scanIntensity * 0.3) {
+                    const lineY = Math.floor(Math.random() * height);
+                    for (let x = 0; x < width; x++) {
+                        const idx = (lineY * width + x) * 4;
+                        outputData[idx] = 220 + Math.random() * 35;
+                        outputData[idx+1] = 180 + Math.random() * 60;
+                        outputData[idx+2] = 150 + Math.random() * 50;
+                    }
+                }
+            }
+            
+            // 5. Vignette + contrast boost
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const maxDist = Math.sqrt(centerX*centerX + centerY*centerY);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const dx = (x - centerX);
+                    const dy = (y - centerY);
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    const vignette = 1 - Math.min(0.45, (dist / maxDist) * 0.45);
+                    outputData[idx] = Math.min(255, outputData[idx] * (0.9 + vignette * 0.2));
+                    outputData[idx+1] = Math.min(255, outputData[idx+1] * (0.88 + vignette * 0.2));
+                    outputData[idx+2] = Math.min(255, outputData[idx+2] * (0.85 + vignette * 0.2));
+                }
+            }
+            
+            // add subtle color crush / VHS tint (magenta/green push)
+            for (let i = 0; i < outputData.length; i+=4) {
+                let r = outputData[i];
+                let g = outputData[i+1];
+                let b = outputData[i+2];
+                // emulate magnetic tape saturation
+                r = r * 1.05;
+                g = g * 0.98;
+                b = b * 1.08;
+                outputData[i] = Math.min(255, r);
+                outputData[i+1] = Math.min(255, g);
+                outputData[i+2] = Math.min(255, b);
+            }
+            
+            return new ImageData(outputData, width, height);
+        }
+        
+        // render loop: get current source frame and apply VHS effect
+        let lastTimestamp = 0;
+        function renderVHS(now) {
+            if (!currentMedia) {
+                // clear canvas if no media
+                if (ctx) ctx.clearRect(0, 0, vhsCanvas.width, vhsCanvas.height);
+                animationFrameId = null;
+                return;
+            }
+            
+            let srcReady = false;
+            if (mediaType === 'image' && currentMedia.complete && currentMedia.naturalWidth > 0) srcReady = true;
+            if (mediaType === 'video' && currentMedia.readyState >= 2 && currentMedia.videoWidth > 0) srcReady = true;
+            
+            if (srcReady) {
+                const w = (mediaType === 'video') ? currentMedia.videoWidth : currentMedia.naturalWidth;
+                const h = (mediaType === 'video') ? currentMedia.videoHeight : currentMedia.naturalHeight;
+                if (w && h && (sourceDimensions.width !== w || sourceDimensions.height !== h)) {
+                    sourceDimensions = { width: w, height: h };
+                    setCanvasSizeFromSource(w, h);
+                }
+                if (targetCanvasWidth > 0 && targetCanvasHeight > 0) {
+                    const offCanvas = document.createElement('canvas');
+                    offCanvas.width = targetCanvasWidth;
+                    offCanvas.height = targetCanvasHeight;
+                    const offCtx = offCanvas.getContext('2d');
+                    offCtx.drawImage(currentMedia, 0, 0, targetCanvasWidth, targetCanvasHeight);
+                    const frameData = offCtx.getImageData(0, 0, targetCanvasWidth, targetCanvasHeight);
+                    const processed = applyVHSEffect(frameData, now);
+                    ctx.putImageData(processed, 0, 0);
+                }
+            } else {
+                // if not ready, show black
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, vhsCanvas.width, vhsCanvas.height);
+            }
+            
+            animationFrameId = requestAnimationFrame(renderVHS);
+        }
+        
+        function startRenderLoop() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(renderVHS);
+        }
+        
+        // load media file
+        function loadMedia(file) {
+            if (!file) return;
+            revokeMedia();
+            const url = URL.createObjectURL(file);
+            currentObjectUrl = url;
+            const isVideo = file.type.startsWith('video/');
+            
+            if (isVideo) {
+                const videoElem = document.createElement('video');
+                videoElem.src = url;
+                videoElem.loop = true;
+                videoElem.muted = false;
+                videoElem.playsInline = true;
+                videoElem.setAttribute('controls', 'true');
+                videoElem.style.maxWidth = '100%';
+                videoElem.style.maxHeight = '460px';
+                videoElem.style.borderRadius = '16px';
+                videoElem.style.boxShadow = '0 0 0 1px #2affb6';
+                videoElem.crossOrigin = "Anonymous";
+                originalContainer.innerHTML = '';
+                originalContainer.appendChild(videoElem);
+                currentMedia = videoElem;
+                mediaType = 'video';
+                // custom play/pause
+                mediaControlsDiv.innerHTML = `<div class="vid-actions"><button id="playVidBtn">▶ PLAY</button><button id="pauseVidBtn">⏸ PAUSE</button><button id="resetVidBtn">⟳ REWIND</button></div>`;
+                document.getElementById('playVidBtn')?.addEventListener('click', () => videoElem.play());
+                document.getElementById('pauseVidBtn')?.addEventListener('click', () => videoElem.pause());
+                document.getElementById('resetVidBtn')?.addEventListener('click', () => { videoElem.currentTime = 0; videoElem.play(); });
+                videoElem.addEventListener('loadedmetadata', () => {
+                    sourceDimensions = { width: videoElem.videoWidth, height: videoElem.videoHeight };
+                    setCanvasSizeFromSource(videoElem.videoWidth, videoElem.videoHeight);
+                    videoElem.play().catch(e => console.log("autoplay blocked", e));
+                });
+            } else {
+                const imgElem = document.createElement('img');
+                imgElem.src = url;
+                imgElem.style.maxWidth = '100%';
+                imgElem.style.maxHeight = '460px';
+                imgElem.style.borderRadius = '16px';
+                imgElem.style.boxShadow = '0 0 0 1px #2affb6';
+                originalContainer.innerHTML = '';
+                originalContainer.appendChild(imgElem);
+                currentMedia = imgElem;
+                mediaType = 'image';
+                mediaControlsDiv.innerHTML = `<div class="status">📷 still image | VHS animation live</div>`;
+                imgElem.onload = () => {
+                    sourceDimensions = { width: imgElem.naturalWidth, height: imgElem.naturalHeight };
+                    setCanvasSizeFromSource(imgElem.naturalWidth, imgElem.naturalHeight);
+                };
+            }
+            startRenderLoop();
+        }
+        
+        // download VHS canvas snapshot
+        function downloadSnapshot() {
+            if (!vhsCanvas || vhsCanvas.width === 0) return;
+            const link = document.createElement('a');
+            link.download = `vhs_snapshot_${Date.now()}.png`;
+            link.href = vhsCanvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // drag & drop
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#ff61a6'; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#2affb6'; });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#2affb6';
+            const file = e.dataTransfer.files[0];
+            if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) loadMedia(file);
+            else alert("⚠️ only images or videos");
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) loadMedia(e.target.files[0]);
+        });
+        
+        downloadBtn.addEventListener('click', downloadSnapshot);
+        
+        // initial default image placeholder (optional retro bg)
+        function setDefaultPlaceholder() {
+            originalContainer.innerHTML = `<div style="color:#3c7569; text-align:center; padding:2rem;">⚡ no media<br>upload image or video</div>`;
+            ctx.fillStyle = '#031010';
+            ctx.fillRect(0, 0, vhsCanvas.width, vhsCanvas.height);
+            ctx.fillStyle = '#2affb644';
+            ctx.font = "12px monospace";
+            ctx.fillText("VHS ready", 20, 40);
+        }
+        setDefaultPlaceholder();
+        updateParamDisplays();
+        // set canvas initial
+        vhsCanvas.width = 640;
+        vhsCanvas.height = 360;
+        ctx.fillStyle = '#0a1212';
+        ctx.fillRect(0,0,640,360);
+    })();
+</script>
+</body>
+</html>
